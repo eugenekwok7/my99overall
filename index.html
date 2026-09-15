@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My99Overall — Can you build a 99 Demigod?</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="min-h-screen text-slate-100 flex flex-col justify-between selection:bg-orange-500 selection:text-white">
+
+  <!-- Top Navbar -->
+  <header class="border-b border-slate-800/80 px-6 py-3 flex items-center justify-between bg-slate-950/50 backdrop-blur-md sticky top-0 z-40">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center font-black text-white shadow-lg shadow-orange-600/30">
+        99
+      </div>
+      <span class="text-xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-orange-400 to-amber-300">
+        My99Overall
+      </span>
+      <span class="text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700">82-0 Engine</span>
+    </div>
+    
+    <div class="flex items-center gap-3">
+      <button onclick="resetGame()" class="px-3.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold transition">
+        ↺ Restart Run
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Grid Canvas -->
+  <main class="max-w-7xl mx-auto w-full p-4 lg:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 flex-1 items-start">
+    
+    <!-- LEFT PANEL: Spinners & Roster Pool (5 Cols) -->
+    <div class="lg:col-span-5 flex flex-col gap-5">
+      
+      <!-- Spinner Controls Card -->
+      <div class="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-2xl relative">
+        <div class="flex items-center justify-between mb-4">
+          <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Draft Reel</span>
+          <div class="flex items-center gap-2">
+            <button id="rerollTeamBtn" onclick="useReroll('team')" class="px-2.5 py-1 rounded-md text-[11px] font-bold bg-orange-500/20 text-orange-400 border border-orange-500/40 hover:bg-orange-500 hover:text-white transition disabled:opacity-30 disabled:cursor-not-allowed">
+              🔄 Team (1)
+            </button>
+            <button id="rerollEraBtn" onclick="useReroll('era')" class="px-2.5 py-1 rounded-md text-[11px] font-bold bg-purple-500/20 text-purple-400 border border-purple-500/40 hover:bg-purple-500 hover:text-white transition disabled:opacity-30 disabled:cursor-not-allowed">
+              🔄 Era (1)
+            </button>
+          </div>
+        </div>
+
+        <!-- Spin Boxes -->
+        <div class="grid grid-cols-2 gap-3.5 w-full mb-5">
+          <div class="flex flex-col items-center justify-center p-3.5 rounded-xl bg-slate-950 border-2 border-orange-500/80 shadow-lg shadow-orange-500/10 min-h-[92px]">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-orange-400 mb-0.5">Team</span>
+            <div id="teamDisplay" class="text-2xl font-black text-white tracking-wide">--</div>
+          </div>
+          <div class="flex flex-col items-center justify-center p-3.5 rounded-xl bg-slate-950 border-2 border-purple-500/80 shadow-lg shadow-purple-500/10 min-h-[92px]">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-purple-400 mb-0.5">Era</span>
+            <div id="eraDisplay" class="text-2xl font-black text-white tracking-wide">--</div>
+          </div>
+        </div>
+
+        <button id="spinBtn" onclick="triggerMainSpin()" class="w-full py-3.5 px-6 rounded-xl font-black text-sm tracking-wide uppercase bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 active:scale-[0.98] transition shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2">
+          <span>Spin Franchise & Era</span>
+        </button>
+
+        <p id="spinNotice" class="text-[11px] text-center text-slate-400 mt-2.5 italic">
+          Press Spin to draw your first franchise.
+        </p>
+      </div>
+
+      <!-- Deep Roster Pool -->
+      <div class="p-5 rounded-2xl bg-slate-900/70 border border-slate-800 flex-1 flex flex-col">
+        <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
+          <div class="flex items-center gap-2">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300">Available Roster</h3>
+            <span id="playerCount" class="text-[11px] text-slate-500 font-mono">(0)</span>
+          </div>
+          <input 
+            type="text" 
+            id="searchInput" 
+            oninput="filterRoster()" 
+            placeholder="Search player..." 
+            class="px-2.5 py-1 text-xs rounded-lg bg-slate-950 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-orange-500 w-36"
+          />
+        </div>
+
+        <div id="rosterContainer" class="flex flex-col gap-2 max-h-[380px] overflow-y-auto pr-1">
+          <div class="py-16 text-center text-slate-500 text-xs italic">
+            Spin the reel above to load the franchise roster.
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT PANEL: The 8-Skill MyPlayer Card (7 Cols) -->
+    <div class="lg:col-span-7 flex flex-col gap-4">
+      <div class="rounded-3xl bg-slate-900/90 border border-slate-800/90 shadow-2xl p-6 lg:p-8 court-grid relative overflow-hidden">
+        
+        <div class="flex items-center justify-between pb-6 border-b border-slate-800 mb-6">
+          <div>
+            <span class="text-[11px] font-extrabold uppercase tracking-widest text-slate-400">MyPlayer Archetype</span>
+            <h2 id="archetypeTitle" class="text-2xl font-black text-white mt-0.5">Prospect</h2>
+            <div class="flex items-center gap-2 mt-1.5">
+              <span id="tierBadge" class="text-[11px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+                In Progress
+              </span>
+              <span id="slotsFilledCount" class="text-xs text-slate-500 font-medium">0 of 8 skills drafted</span>
+            </div>
+          </div>
+
+          <div class="flex flex-col items-center justify-center">
+            <div id="overallBadge" class="w-20 h-20 rounded-2xl bg-slate-950 border-2 border-slate-700 flex flex-col items-center justify-center shadow-xl transition-all duration-300">
+              <span id="overallScore" class="text-3xl font-black text-slate-400 tracking-tighter">--</span>
+              <span class="text-[10px] font-bold uppercase text-slate-500 -mt-1">OVR</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5" id="skillSlotsGrid"></div>
+
+        <div id="finishBanner" class="hidden mt-6 p-6 rounded-2xl border bg-slate-950/95 flex flex-col items-center text-center">
+          <span class="text-[10px] font-extrabold uppercase tracking-widest text-orange-400 mb-1">Final Build Outcome</span>
+          <h3 id="finishTier" class="text-3xl font-black uppercase tracking-wide"></h3>
+          <p id="finishSubtitle" class="text-xs text-slate-400 mt-1.5 max-w-md"></p>
+          
+          <div class="flex gap-3 mt-5">
+            <button onclick="shareBuild()" class="px-6 py-2.5 rounded-xl text-xs font-bold uppercase bg-orange-500 hover:bg-orange-600 text-white transition shadow-lg shadow-orange-500/25">
+              Copy Card to Clipboard
+            </button>
+            <button onclick="resetGame()" class="px-5 py-2.5 rounded-xl text-xs font-bold uppercase bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
+              Play Again
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- Player Assign Modal -->
+  <div id="assignModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
+    <div id="modalContainer" class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+      <div class="flex justify-between items-start mb-4">
+        <div>
+          <span class="text-[10px] font-extrabold uppercase tracking-wider text-orange-400">Lock In Attribute</span>
+          <h3 id="modalPlayerName" class="text-xl font-black text-white">Player Name</h3>
+          <p id="modalPlayerSub" class="text-xs text-slate-500">Position • Archetype</p>
+        </div>
+        <button onclick="closeModal()" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm font-bold transition">
+          ✕
+        </button>
+      </div>
+
+      <p class="text-xs text-slate-400 mb-3">Assign this player to one remaining empty skill slot (Press ESC or click outside to cancel):</p>
+      
+      <div id="modalSkillChoices" class="flex flex-col gap-2 max-h-72 overflow-y-auto pr-1"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
