@@ -1,8 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800;900&display=swap');
 
-body {
+html, body {
+  background-color: #090c13 !important;
+  overscroll-behavior-y: none; /* Kills the trackpad bounce showing white margins */
+  min-height: 100vh;
   font-family: 'Plus Jakarta Sans', sans-serif;
-  background: radial-gradient(circle at 50% 15%, #141a29 0%, #090c13 100%);
 }
 
 .court-grid {

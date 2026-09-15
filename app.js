@@ -1,3 +1,4 @@
+// --- SKILL CATEGORIES CONFIG ---
 const SKILLS = [
   { id: 'three_pt', name: '3-Point Shooting', icon: '🎯' },
   { id: 'finishing', name: 'Finishing & Dunks', icon: '💥' },
@@ -9,14 +10,41 @@ const SKILLS = [
   { id: 'iq_clutch', name: 'Basketball IQ & Clutch', icon: '🧠' }
 ];
 
+const TEAM_COLORS = {
+  GSW: { bg: 'bg-blue-600/30', border: 'border-blue-500/60', text: 'text-amber-400' },
+  LAL: { bg: 'bg-purple-900/40', border: 'border-purple-500/60', text: 'text-yellow-400' },
+  BOS: { bg: 'bg-emerald-900/40', border: 'border-emerald-500/60', text: 'text-emerald-300' },
+  CHI: { bg: 'bg-red-950/40', border: 'border-red-600/60', text: 'text-red-400' },
+  MIA: { bg: 'bg-rose-950/40', border: 'border-rose-600/60', text: 'text-amber-500' },
+  SAS: { bg: 'bg-slate-800/40', border: 'border-slate-500/60', text: 'text-slate-200' },
+  OKC: { bg: 'bg-sky-900/40', border: 'border-sky-500/60', text: 'text-orange-400' },
+  DAL: { bg: 'bg-blue-900/40', border: 'border-blue-600/60', text: 'text-sky-300' },
+  DEN: { bg: 'bg-indigo-950/40', border: 'border-yellow-500/60', text: 'text-yellow-400' },
+  MIL: { bg: 'bg-emerald-950/40', border: 'border-emerald-600/60', text: 'text-amber-200' },
+  NYK: { bg: 'bg-blue-950/40', border: 'border-orange-500/60', text: 'text-orange-400' }
+};
+
+// --- SUPABASE CONFIGURATION ---
+// REPLACE THESE TWO STRINGS WITH YOUR SUPABASE PROJECT SETTINGS -> API KEYS
+const SUPABASE_URL = "https://uptnxlckiroqjzpundpg.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVwdG54bGNraXJvcWp6cHVuZHBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk0MTUzOTMsImV4cCI6MjEwNDk5MTM5M30.oLVrh3zogF-03Cuk3YDNCPLS1uBfimnqYzwzn6cgWq4";
+
+const supabaseClient = (window.supabase && SUPABASE_URL !== "https://YOUR_PROJECT_ID.supabase.co") 
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
+  : null;
+
+// --- APP STATE ---
 let database = { teams: [], eras: [], players: {} };
 let slotsState = {};
 let usedPlayers = new Set();
 let currentSpin = { teamCode: null, eraStr: null };
 let mustPick = false;
 let rerolls = { team: 1, era: 1 };
+let currentGameMode = 'classic';
+let currentUser = null;
+let currentLeaderboardMode = 'classic';
 
-// Load the JSON database on startup
+// --- INITIALIZATION ---
 async function init() {
   try {
     const res = await fetch('./data/rosters.json');
@@ -24,19 +52,305 @@ async function init() {
   } catch (err) {
     console.error("Failed to load rosters.json:", err);
   }
+
+  // Check auth session
+  if (supabaseClient) {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    updateUserAuthUI(session?.user || null);
+
+    supabaseClient.auth.onAuthStateChange((_event, session) => {
+      updateUserAuthUI(session?.user || null);
+    });
+  }
+
   renderSlots();
 }
 
-// Modal dismissal listeners
+// --- VIEW NAVIGATION (DRAFT vs LEADERBOARD vs STATS) ---
+function switchMainView(view) {
+  const gView = document.getElementById('gameView');
+  const lbView = document.getElementById('leaderboardView');
+  const sView = document.getElementById('statsView');
+  const modeGroup = document.getElementById('modeSelectorGroup');
+
+  const navGame = document.getElementById('navGameBtn');
+  const navLb = document.getElementById('navLeaderboardBtn');
+  const navStats = document.getElementById('navStatsBtn');
+
+  // Reset nav highlights
+  [navGame, navLb, navStats].forEach(b => b.className = "px-3.5 py-1.5 rounded-lg transition text-slate-400 hover:text-white");
+  [gView, lbView, sView].forEach(v => v.classList.add('hidden'));
+
+  if (view === 'game') {
+    gView.classList.remove('hidden');
+    navGame.className = "px-3.5 py-1.5 rounded-lg transition bg-orange-500 text-white shadow-md";
+    modeGroup.classList.remove('hidden');
+  } else if (view === 'leaderboard') {
+    lbView.classList.remove('hidden');
+    navLb.className = "px-3.5 py-1.5 rounded-lg transition bg-orange-500 text-white shadow-md";
+    modeGroup.classList.add('hidden');
+    fetchLeaderboard();
+  } else if (view === 'stats') {
+    sView.classList.remove('hidden');
+    navStats.className = "px-3.5 py-1.5 rounded-lg transition bg-orange-500 text-white shadow-md";
+    modeGroup.classList.add('hidden');
+    fetchUserStats();
+  }
+}
+
+// --- AUTHENTICATION FLOW ---
+function openAuthModal() {
+  document.getElementById('authModal').classList.remove('hidden');
+  document.getElementById('authModal').classList.add('flex');
+}
+
+function closeAuthModal() {
+  document.getElementById('authModal').classList.add('hidden');
+  document.getElementById('authModal').classList.remove('flex');
+}
+
+async function signInWithGoogle() {
+  if (!supabaseClient) {
+    alert("Please add your Supabase URL & Anon Key in app.js first!");
+    return;
+  }
+  await supabaseClient.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: window.location.origin }
+  });
+}
+
+async function handleEmailAuth(e) {
+  e.preventDefault();
+  if (!supabaseClient) {
+    alert("Please add your Supabase URL & Anon Key in app.js first!");
+    return;
+  }
+
+  const email = document.getElementById('authEmail').value;
+  const password = document.getElementById('authPassword').value;
+
+  // Try signing in; if not found, register
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if (error) {
+    const { error: signUpError } = await supabaseClient.auth.signUp({ email, password });
+    if (signUpError) {
+      alert(signUpError.message);
+      return;
+    }
+    alert("Account registered and logged in!");
+  }
+  closeAuthModal();
+}
+
+async function handleSignOut() {
+  if (supabaseClient) {
+    await supabaseClient.auth.signOut();
+    updateUserAuthUI(null);
+  }
+}
+
+function updateUserAuthUI(user) {
+  currentUser = user;
+  const container = document.getElementById('authContainer');
+  if (user) {
+    const name = user.user_metadata?.full_name || user.email?.split('@')[0] || "Hooper";
+    container.innerHTML = `
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-slate-300 font-bold">${name}</span>
+        <button onclick="handleSignOut()" class="text-[10px] text-slate-500 hover:text-rose-400 font-semibold uppercase underline">Sign Out</button>
+      </div>
+    `;
+    document.getElementById('statsUserGreeting').innerText = `Logged in as ${user.email}`;
+  } else {
+    container.innerHTML = `
+      <button onclick="openAuthModal()" class="px-3.5 py-1.5 rounded-lg bg-orange-500/20 text-orange-400 border border-orange-500/40 hover:bg-orange-500 hover:text-white text-xs font-bold transition">
+        Sign In
+      </button>
+    `;
+    document.getElementById('statsUserGreeting').innerText = "Sign in to save your runs across devices.";
+  }
+}
+
+// --- CLOUD SAVE TO SUPABASE ---
+async function saveCompletedBuildToSupabase(finalOvr, tier, variance, arch) {
+  const statusEl = document.getElementById('saveStatus');
+  statusEl.innerText = "Syncing build to global leaderboard...";
+
+  if (!supabaseClient) {
+    statusEl.innerText = "Build complete! (Add Supabase keys in app.js to enable global rankings)";
+    return;
+  }
+
+  const userName = currentUser?.user_metadata?.full_name || currentUser?.email?.split('@')[0] || "Anonymous Hooper";
+
+  try {
+    const { error } = await supabaseClient.from('builds').insert({
+      user_id: currentUser?.id || null,
+      user_name: userName,
+      overall_score: finalOvr,
+      tier_name: tier,
+      archetype_title: arch,
+      attribute_variance: parseFloat(variance),
+      game_mode: currentGameMode,
+      slots_data: slotsState
+    });
+
+    if (error) throw error;
+    statusEl.innerText = "✓ Build verified & ranked on the global leaderboard!";
+  } catch (err) {
+    console.error("Failed to save build:", err);
+    statusEl.innerText = "Build saved locally.";
+  }
+}
+
+// --- LEADERBOARD FETCHING ---
+async function fetchLeaderboard() {
+  const tbody = document.getElementById('leaderboardTableBody');
+  tbody.innerHTML = `<tr><td colspan="5" class="py-12 text-center text-slate-500 italic">Fetching rankings...</td></tr>`;
+
+  if (!supabaseClient) {
+    tbody.innerHTML = `<tr><td colspan="5" class="py-12 text-center text-slate-500 italic">Configure Supabase keys to display live rankings.</td></tr>`;
+    return;
+  }
+
+  const { data, error } = await supabaseClient
+    .from('builds')
+    .select('*')
+    .eq('game_mode', currentLeaderboardMode)
+    .order('overall_score', { ascending: false })
+    .order('attribute_variance', { ascending: true })
+    .limit(25);
+
+  if (error || !data || data.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" class="py-12 text-center text-slate-500 italic">No builds submitted in this mode yet. Be the first!</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = '';
+  data.forEach((row, i) => {
+    const tr = document.createElement('tr');
+    tr.className = "hover:bg-slate-800/40 transition";
+    tr.innerHTML = `
+      <td class="py-3 px-4 font-black ${i === 0 ? 'text-amber-400' : (i === 1 ? 'text-slate-300' : (i === 2 ? 'text-amber-600' : 'text-slate-500'))}">#${i + 1}</td>
+      <td class="py-3 px-4 font-bold text-white">${row.user_name}</td>
+      <td class="py-3 px-4 text-slate-400">${row.archetype_title} <span class="text-[10px] text-slate-500">(${row.tier_name})</span></td>
+      <td class="py-3 px-4 text-center font-mono text-slate-400">${row.attribute_variance}</td>
+      <td class="py-3 px-4 text-right font-black text-base ${getRatingColor(row.overall_score)}">${row.overall_score}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function filterLeaderboardMode(mode) {
+  currentLeaderboardMode = mode;
+  const classicBtn = document.getElementById('lbFilterClassic');
+  const hoopIqBtn = document.getElementById('lbFilterHoopIq');
+
+  if (mode === 'classic') {
+    classicBtn.className = "px-3.5 py-1.5 rounded-lg bg-orange-500 text-white transition";
+    hoopIqBtn.className = "px-3.5 py-1.5 rounded-lg text-slate-400 hover:text-white transition";
+  } else {
+    hoopIqBtn.className = "px-3.5 py-1.5 rounded-lg bg-orange-500 text-white transition";
+    classicBtn.className = "px-3.5 py-1.5 rounded-lg text-slate-400 hover:text-white transition";
+  }
+  fetchLeaderboard();
+}
+
+// --- USER PROFILE & STATS FETCHING ---
+async function fetchUserStats() {
+  const tbody = document.getElementById('userBuildsTableBody');
+  if (!supabaseClient || !currentUser) {
+    tbody.innerHTML = `<tr><td colspan="5" class="py-12 text-center text-slate-500 italic">Sign in to view your career stats and past builds.</td></tr>`;
+    return;
+  }
+
+  const { data, error } = await supabaseClient
+    .from('builds')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .order('created_at', { ascending: false });
+
+  if (error || !data || data.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" class="py-12 text-center text-slate-500 italic">No saved builds found for this account.</td></tr>`;
+    return;
+  }
+
+  // Update Summary Cards
+  const total = data.length;
+  const bestOvr = Math.max(...data.map(d => d.overall_score));
+  const avgOvr = (data.reduce((acc, d) => acc + d.overall_score, 0) / total).toFixed(1);
+  const bestTier = data.find(d => d.overall_score === bestOvr)?.tier_name || "--";
+
+  document.getElementById('statTotalRuns').innerText = total;
+  document.getElementById('statBestOvr').innerText = bestOvr;
+  document.getElementById('statAvgOvr').innerText = avgOvr;
+  document.getElementById('statBestTier').innerText = bestTier;
+
+  // Render Table
+  tbody.innerHTML = '';
+  data.forEach(row => {
+    const d = new Date(row.created_at).toLocaleDateString();
+    const tr = document.createElement('tr');
+    tr.className = "hover:bg-slate-800/40 transition";
+    tr.innerHTML = `
+      <td class="py-3 px-4 text-slate-400">${d}</td>
+      <td class="py-3 px-4 uppercase text-[10px] font-bold text-slate-400">${row.game_mode}</td>
+      <td class="py-3 px-4 font-bold text-white">${row.archetype_title}</td>
+      <td class="py-3 px-4 text-center font-bold text-slate-300">${row.tier_name}</td>
+      <td class="py-3 px-4 text-right font-black ${getRatingColor(row.overall_score)}">${row.overall_score}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// --- MODAL DISMISSAL LISTENERS ---
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Escape') {
+    closeModal();
+    closeAuthModal();
+  }
 });
 
 document.getElementById('assignModal').addEventListener('click', (e) => {
   if (e.target.id === 'assignModal') closeModal();
 });
 
-// Spin mechanics
+document.getElementById('authModal').addEventListener('click', (e) => {
+  if (e.target.id === 'authModal') closeAuthModal();
+});
+
+// --- GAME MODE SWITCHER ---
+function switchGameMode(newMode) {
+  if (Object.keys(slotsState).length > 0) {
+    const confirmSwitch = confirm("Changing modes will reset your current draft run. Continue?");
+    if (!confirmSwitch) return;
+  }
+
+  currentGameMode = newMode;
+  const modes = ['classic', 'hoop_iq', '1v1'];
+  const btnMap = {
+    classic: document.getElementById('modeClassicBtn'),
+    hoop_iq: document.getElementById('modeHoopIqBtn'),
+    '1v1': document.getElementById('mode1v1Btn')
+  };
+
+  modes.forEach(m => {
+    if (btnMap[m]) {
+      btnMap[m].className = (m === newMode) 
+        ? "px-3 py-1 rounded-lg transition bg-orange-500 text-white shadow-md" 
+        : "px-3 py-1 rounded-lg transition text-slate-400 hover:text-white";
+    }
+  });
+
+  resetGame();
+
+  if (newMode === '1v1') {
+    alert("1v1 Mode: Draft your build, then download the build card to compare attributes head-to-head against a friend!");
+  }
+}
+
+// --- MAIN SPIN WHEEL ---
 function triggerMainSpin() {
   if (mustPick) {
     alert("You must choose a player for an open attribute before spinning again!");
@@ -75,15 +389,17 @@ function triggerMainSpin() {
 
       mustPick = true;
       spinBtn.classList.add('opacity-40', 'cursor-not-allowed');
-      document.getElementById('spinNotice').innerText = "Pick locked! Select a player below to fill an attribute.";
-      document.getElementById('spinNotice').className = "text-[11px] text-center text-orange-400 mt-2.5 font-bold animate-pulse";
+      
+      const notice = document.getElementById('spinNotice');
+      notice.innerText = "Pick locked! Select a player below to fill an attribute.";
+      notice.className = "text-[11px] text-center text-orange-400 mt-2.5 font-bold animate-pulse";
 
       loadRoster();
     }
   }, 70);
 }
 
-// Lifeline Rerolls
+// --- LIFELINE REROLLS ---
 function useReroll(type) {
   if (!mustPick) {
     alert("Spin the reel first before using a reroll!");
@@ -91,28 +407,64 @@ function useReroll(type) {
   }
   if (rerolls[type] <= 0) return;
 
-  rerolls[type]--;
   const btn = document.getElementById(type === 'team' ? 'rerollTeamBtn' : 'rerollEraBtn');
+  const displayEl = document.getElementById(type === 'team' ? 'teamDisplay' : 'eraDisplay');
+
+  rerolls[type]--;
   btn.disabled = true;
   btn.innerText = `🔄 ${type.toUpperCase()} (0)`;
+  displayEl.classList.add('rolling');
 
-  if (type === 'team') {
-    const otherTeams = database.teams.filter(t => t.code !== currentSpin.teamCode && database.players[`${t.code}_${currentSpin.eraStr}`]);
-    const pool = otherTeams.length > 0 ? otherTeams : database.teams.filter(t => t.code !== currentSpin.teamCode);
-    const newTeam = pool[Math.floor(Math.random() * pool.length)].code;
-    currentSpin.teamCode = newTeam;
-    document.getElementById('teamDisplay').innerText = newTeam;
-  } else {
-    const otherEras = database.eras.filter(e => e !== currentSpin.eraStr);
-    const newEra = otherEras[Math.floor(Math.random() * otherEras.length)];
-    currentSpin.eraStr = newEra;
-    document.getElementById('eraDisplay').innerText = newEra;
-  }
+  let rollCount = 0;
+  const interval = setInterval(() => {
+    rollCount++;
+    if (type === 'team') {
+      const rTeam = database.teams[Math.floor(Math.random() * database.teams.length)];
+      displayEl.innerText = rTeam.code;
+    } else {
+      const rEra = database.eras[Math.floor(Math.random() * database.eras.length)];
+      displayEl.innerText = rEra;
+    }
 
-  loadRoster();
+    if (rollCount > 8) {
+      clearInterval(interval);
+      displayEl.classList.remove('rolling');
+
+      if (type === 'team') {
+        const validTeams = database.teams.filter(t => 
+          t.code !== currentSpin.teamCode && 
+          database.players[`${t.code}_${currentSpin.eraStr}`]?.length > 0
+        );
+        currentSpin.teamCode = (validTeams.length > 0)
+          ? validTeams[Math.floor(Math.random() * validTeams.length)].code
+          : database.teams.filter(t => t.code !== currentSpin.teamCode)[0].code;
+        displayEl.innerText = currentSpin.teamCode;
+
+      } else {
+        const validErasForTeam = database.eras.filter(e => 
+          e !== currentSpin.eraStr && 
+          database.players[`${currentSpin.teamCode}_${e}`]?.length > 0
+        );
+
+        if (validErasForTeam.length > 0) {
+          currentSpin.eraStr = validErasForTeam[Math.floor(Math.random() * validErasForTeam.length)];
+        } else {
+          const allKeys = Object.keys(database.players);
+          const fallbackKey = allKeys[Math.floor(Math.random() * allKeys.length)];
+          const [fbTeam, fbEra] = fallbackKey.split('_');
+          currentSpin.teamCode = fbTeam;
+          currentSpin.eraStr = fbEra;
+          document.getElementById('teamDisplay').innerText = fbTeam;
+        }
+        displayEl.innerText = currentSpin.eraStr;
+      }
+
+      loadRoster();
+    }
+  }, 60);
 }
 
-// Load Roster
+// --- LOAD ROSTER ---
 function loadRoster() {
   const container = document.getElementById('rosterContainer');
   const countEl = document.getElementById('playerCount');
@@ -124,9 +476,11 @@ function loadRoster() {
   countEl.innerText = `(${players.length})`;
 
   if (players.length === 0) {
-    container.innerHTML = `<div class="py-12 text-center text-slate-500 text-xs">No roster data found for ${currentSpin.teamCode} (${currentSpin.eraStr}).</div>`;
+    container.innerHTML = `<div class="py-12 text-center text-slate-500 text-xs italic">No roster entries found for ${currentSpin.teamCode} (${currentSpin.eraStr}).</div>`;
     return;
   }
+
+  const teamColors = TEAM_COLORS[currentSpin.teamCode] || { bg: 'bg-slate-800', border: 'border-slate-700', text: 'text-slate-300' };
 
   players.forEach(p => {
     const isBurned = usedPlayers.has(p.name);
@@ -138,12 +492,17 @@ function loadRoster() {
     }`;
 
     card.innerHTML = `
-      <div>
-        <div class="flex items-center gap-2">
-          <span class="text-sm font-bold text-white">${p.name}</span>
-          <span class="text-[10px] font-semibold text-slate-400 px-1.5 py-0.5 rounded bg-slate-800">${p.pos}</span>
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg ${teamColors.bg} border ${teamColors.border} flex items-center justify-center font-black text-[11px] ${teamColors.text}">
+          ${currentSpin.teamCode}
         </div>
-        <div class="text-[10px] text-slate-500 mt-0.5">${currentSpin.teamCode} • ${currentSpin.eraStr} ${isBurned ? '• (Used)' : ''}</div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-bold text-white">${p.name}</span>
+            <span class="text-[10px] font-semibold text-slate-400 px-1.5 py-0.5 rounded bg-slate-800">${p.pos}</span>
+          </div>
+          <div class="text-[10px] text-slate-500 mt-0.5">${currentSpin.eraStr} ${isBurned ? '• (Drafted)' : ''}</div>
+        </div>
       </div>
       <button ${isBurned ? 'disabled' : ''} class="text-xs px-3 py-1.5 rounded-lg ${isBurned ? 'bg-slate-900 text-slate-600' : 'bg-slate-800 hover:bg-orange-500 hover:text-white text-slate-300'} font-semibold transition">
         ${isBurned ? 'Locked' : 'Draft'}
@@ -157,7 +516,6 @@ function loadRoster() {
   });
 }
 
-// Search Filter
 function filterRoster() {
   const query = document.getElementById('searchInput').value.toLowerCase();
   const rows = document.getElementById('rosterContainer').children;
@@ -166,7 +524,7 @@ function filterRoster() {
   });
 }
 
-// Assign Modal Logic
+// --- ASSIGN MODAL ---
 function openAssignModal(player) {
   document.getElementById('modalPlayerName').innerText = player.name;
   document.getElementById('modalPlayerSub').innerText = `${player.pos} • ${currentSpin.teamCode} (${currentSpin.eraStr})`;
@@ -176,6 +534,11 @@ function openAssignModal(player) {
   SKILLS.forEach(s => {
     const isFilled = !!slotsState[s.id];
     const val = player.ratings[s.id] || 50;
+
+    const displayVal = (currentGameMode === 'hoop_iq') ? '??' : val;
+    const statColorClass = (currentGameMode === 'hoop_iq') 
+      ? 'text-amber-400/80 font-mono tracking-widest' 
+      : getRatingColor(val);
 
     const row = document.createElement('button');
     row.disabled = isFilled;
@@ -193,8 +556,8 @@ function openAssignModal(player) {
           <div class="text-[10px] text-slate-500">${isFilled ? 'Slot Filled' : 'Available Slot'}</div>
         </div>
       </div>
-      <div class="text-base font-black ${isFilled ? 'text-slate-600' : getRatingColor(val)}">
-        ${val}
+      <div class="text-base font-black ${isFilled ? 'text-slate-600' : statColorClass}">
+        ${displayVal}
       </div>
     `;
 
@@ -228,8 +591,10 @@ function confirmAssignment(skillId, player, rating) {
   const spinBtn = document.getElementById('spinBtn');
   spinBtn.disabled = false;
   spinBtn.classList.remove('opacity-40', 'cursor-not-allowed');
-  document.getElementById('spinNotice').innerText = "Slot locked! Spin for your next skill.";
-  document.getElementById('spinNotice').className = "text-[11px] text-center text-slate-400 mt-2.5 italic";
+
+  const notice = document.getElementById('spinNotice');
+  notice.innerText = "Slot locked! Spin for your next skill.";
+  notice.className = "text-[11px] text-center text-slate-400 mt-2.5 italic";
 
   document.getElementById('rosterContainer').innerHTML = `
     <div class="py-16 text-center text-slate-500 text-xs italic">
@@ -241,10 +606,11 @@ function confirmAssignment(skillId, player, rating) {
   renderSlots();
 }
 
-// Render Slots & Score
+// --- RENDER SLOTS & UPDATE RADAR ---
 function renderSlots() {
   const grid = document.getElementById('skillSlotsGrid');
   grid.innerHTML = '';
+  const isComplete = Object.keys(slotsState).length === 8;
 
   SKILLS.forEach(s => {
     const slot = slotsState[s.id];
@@ -253,17 +619,26 @@ function renderSlots() {
       (slot ? "bg-slate-950/80 border-slate-700 shadow-inner" : "bg-slate-950/20 border-dashed border-slate-800");
 
     if (slot) {
+      const showStats = (currentGameMode !== 'hoop_iq') || isComplete;
+      const scoreBadge = showStats 
+        ? `<span class="text-xl font-black ${getRatingColor(slot.rating)}">${slot.rating}</span>`
+        : `<span class="text-[11px] font-bold text-amber-500/80 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30">LOCKED</span>`;
+
+      const tColors = TEAM_COLORS[slot.team] || { bg: 'bg-slate-800', border: 'border-slate-700', text: 'text-slate-300' };
+
       card.innerHTML = `
         <div class="flex items-center gap-3">
-          <span class="text-xl">${s.icon}</span>
+          <div class="w-8 h-8 rounded-lg ${tColors.bg} border ${tColors.border} flex items-center justify-center font-black text-[10px] ${tColors.text}">
+            ${slot.team}
+          </div>
           <div>
             <div class="text-[10px] font-bold text-slate-400 uppercase leading-none">${s.name}</div>
             <div class="text-sm font-black text-white mt-1">${slot.player}</div>
-            <div class="text-[10px] text-slate-500">${slot.team} • ${slot.era}</div>
+            <div class="text-[10px] text-slate-500">${slot.era}</div>
           </div>
         </div>
         <div class="text-right">
-          <span class="text-xl font-black ${getRatingColor(slot.rating)}">${slot.rating}</span>
+          ${scoreBadge}
         </div>
       `;
     } else {
@@ -281,7 +656,29 @@ function renderSlots() {
     grid.appendChild(card);
   });
 
+  updateRadarChart();
   calculateOverall();
+}
+
+// --- 2K-STYLE RADAR POLYGON REDRAW ---
+function updateRadarChart() {
+  const size = 160;
+  const center = size / 2;
+  const maxRadius = 60;
+
+  const points = SKILLS.map((skill, index) => {
+    const angle = (Math.PI * 2 / SKILLS.length) * index - (Math.PI / 2);
+    const rating = slotsState[skill.id]?.rating || 30;
+    const r = (rating / 99) * maxRadius;
+    const x = center + r * Math.cos(angle);
+    const y = center + r * Math.sin(angle);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+
+  const polygonEl = document.getElementById('radarPolygon');
+  if (polygonEl) {
+    polygonEl.setAttribute('points', points);
+  }
 }
 
 function getRatingColor(val) {
@@ -292,7 +689,13 @@ function getRatingColor(val) {
   return 'text-rose-400';
 }
 
-// Calculate Overall Score
+function calculateVariance(ratingsArray) {
+  if (ratingsArray.length === 0) return 0;
+  const mean = ratingsArray.reduce((sum, val) => sum + val, 0) / ratingsArray.length;
+  return ratingsArray.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / ratingsArray.length;
+}
+
+// --- DYNAMIC ARCHETYPE & OVR ENGINE ---
 function calculateOverall() {
   const keys = Object.keys(slotsState);
   const count = keys.length;
@@ -304,13 +707,9 @@ function calculateOverall() {
     return;
   }
 
-  let sum = 0;
-  let minVal = 100;
-  keys.forEach(k => {
-    const val = slotsState[k].rating;
-    sum += val;
-    if (val < minVal) minVal = val;
-  });
+  const ratingsList = keys.map(k => slotsState[k].rating);
+  let sum = ratingsList.reduce((a, b) => a + b, 0);
+  let minVal = Math.min(...ratingsList);
 
   const rawAvg = sum / count;
   let finalOVR = Math.round(rawAvg);
@@ -323,7 +722,13 @@ function calculateOverall() {
     }
   }
 
-  document.getElementById('overallScore').innerText = finalOVR;
+  const isComplete = count === 8;
+  if (currentGameMode === 'hoop_iq' && !isComplete) {
+    document.getElementById('overallScore').innerText = "??";
+  } else {
+    document.getElementById('overallScore').innerText = finalOVR;
+  }
+
   updateArchetypeTitle();
 
   let tier = "Prospect";
@@ -358,11 +763,19 @@ function calculateOverall() {
     tierStyles = "text-rose-500 border-rose-600 bg-rose-950/30";
   }
 
-  document.getElementById('tierBadge').innerText = tier;
-  document.getElementById('overallBadge').className = `w-20 h-20 rounded-2xl flex flex-col items-center justify-center shadow-xl transition-all duration-300 border-2 ${tierStyles}`;
+  const tierBadge = document.getElementById('tierBadge');
+  if (currentGameMode === 'hoop_iq' && !isComplete) {
+    tierBadge.innerText = "Evaluating...";
+  } else {
+    tierBadge.innerText = tier;
+    document.getElementById('overallBadge').className = `w-20 h-20 rounded-2xl flex flex-col items-center justify-center shadow-xl transition-all duration-300 border-2 ${tierStyles}`;
+  }
 
-  if (count === 8) {
-    showFinishModal(finalOVR, tier);
+  if (isComplete) {
+    const variance = calculateVariance(ratingsList).toFixed(2);
+    const archTitle = document.getElementById('archetypeTitle').innerText;
+    showFinishModal(finalOVR, tier, variance);
+    saveCompletedBuildToSupabase(finalOVR, tier, variance, archTitle);
   }
 }
 
@@ -389,7 +802,7 @@ function updateArchetypeTitle() {
   document.getElementById('archetypeTitle').innerText = name;
 }
 
-function showFinishModal(ovr, tier) {
+function showFinishModal(ovr, tier, variance) {
   document.getElementById('spinBtn').disabled = true;
   document.getElementById('spinBtn').classList.add('opacity-40', 'cursor-not-allowed');
 
@@ -400,28 +813,48 @@ function showFinishModal(ovr, tier) {
 
   title.innerText = `${ovr} OVR — ${tier}`;
 
+  let desc = `Build Variance: ${variance}. `;
   if (ovr === 99) {
     title.className = "text-3xl font-black uppercase text-amber-400";
-    sub.innerText = "Flawless run! You assembled an immortal, mythical basketball demigod.";
+    sub.innerText = desc + "Flawless run! You assembled an immortal, mythical basketball demigod.";
   } else if (ovr >= 95) {
     title.className = "text-3xl font-black uppercase text-orange-400";
-    sub.innerText = "Superstar caliber. Just one or two picks away from pure GOAT status.";
+    sub.innerText = desc + "Superstar caliber. Just one or two picks away from pure GOAT status.";
   } else if (ovr <= 50) {
     title.className = "text-3xl font-black uppercase text-rose-500";
-    sub.innerText = "Ni Hao! Pack your bags, you're heading straight to the Shanghai Sharks.";
+    sub.innerText = desc + "Ni Hao! Pack your bags, you're heading straight to the Shanghai Sharks.";
   } else {
     title.className = "text-3xl font-black uppercase text-white";
-    sub.innerText = "Your MyPlayer build is officially locked in. Challenge your friends to beat it!";
+    sub.innerText = desc + "Your Frankenstein MyPlayer build is locked. Save your card or challenge friends!";
   }
 }
 
-function shareBuild() {
+// --- CARD EXPORT ---
+function downloadBuildImage() {
+  const cardElement = document.getElementById('exportableBuildCard');
+  const ovr = document.getElementById('overallScore').innerText;
+  const arch = document.getElementById('archetypeTitle').innerText;
+
+  html2canvas(cardElement, {
+    backgroundColor: '#090c13',
+    scale: 2
+  }).then(canvas => {
+    const link = document.createElement('a');
+    link.download = `My99Overall_${arch.replace(/\s+/g, '_')}_${ovr}OVR.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
+}
+
+function shareBuildText() {
   const ovr = document.getElementById('overallScore').innerText;
   const tier = document.getElementById('tierBadge').innerText;
   const arch = document.getElementById('archetypeTitle').innerText;
-  const text = `🏀 My99Overall Challenge\nBuild: ${ovr} OVR (${tier})\nArchetype: ${arch}\nCan you build a 99 Demigod?`;
+  const modeLabel = currentGameMode === 'hoop_iq' ? 'Hoop IQ Mode' : (currentGameMode === '1v1' ? '1v1 Mode' : 'Classic Mode');
+
+  const text = `🏀 My99Overall Challenge (${modeLabel})\nBuild: ${ovr} OVR (${tier})\nArchetype: ${arch}\nCan you build a 99 Demigod?`;
   navigator.clipboard.writeText(text).then(() => {
-    alert("Build stats copied to clipboard!");
+    alert("Build summary copied to clipboard!");
   });
 }
 
@@ -435,15 +868,26 @@ function resetGame() {
   document.getElementById('teamDisplay').innerText = "--";
   document.getElementById('eraDisplay').innerText = "--";
   document.getElementById('finishBanner').classList.add('hidden');
-  document.getElementById('spinBtn').disabled = false;
-  document.getElementById('spinBtn').classList.remove('opacity-40', 'cursor-not-allowed');
-  document.getElementById('spinNotice').innerText = "Press Spin to draw your first franchise.";
-  document.getElementById('spinNotice').className = "text-[11px] text-center text-slate-400 mt-2.5 italic";
+  
+  const spinBtn = document.getElementById('spinBtn');
+  spinBtn.disabled = false;
+  spinBtn.classList.remove('opacity-40', 'cursor-not-allowed');
 
-  document.getElementById('rerollTeamBtn').disabled = false;
-  document.getElementById('rerollTeamBtn').innerText = "🔄 Team (1)";
-  document.getElementById('rerollEraBtn').disabled = false;
-  document.getElementById('rerollEraBtn').innerText = "🔄 Era (1)";
+  const notice = document.getElementById('spinNotice');
+  notice.innerText = "Press Spin to draw your first franchise.";
+  notice.className = "text-[11px] text-center text-slate-400 mt-2.5 italic";
+
+  const rTeamBtn = document.getElementById('rerollTeamBtn');
+  if (rTeamBtn) {
+    rTeamBtn.disabled = false;
+    rTeamBtn.innerText = "🔄 Team (1)";
+  }
+
+  const rEraBtn = document.getElementById('rerollEraBtn');
+  if (rEraBtn) {
+    rEraBtn.disabled = false;
+    rEraBtn.innerText = "🔄 Era (1)";
+  }
 
   document.getElementById('rosterContainer').innerHTML = `
     <div class="py-16 text-center text-slate-500 text-xs italic">
