@@ -25,9 +25,9 @@ const TEAM_COLORS = {
 };
 
 // --- SUPABASE CONFIGURATION ---
-// REPLACE THESE TWO STRINGS WITH YOUR SUPABASE PROJECT SETTINGS -> API KEYS
-const SUPABASE_URL = "https://uptnxlckiroqjzpundpg.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVwdG54bGNraXJvcWp6cHVuZHBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk0MTUzOTMsImV4cCI6MjEwNDk5MTM5M30.oLVrh3zogF-03Cuk3YDNCPLS1uBfimnqYzwzn6cgWq4";
+// Paste your project values below
+const SUPABASE_URL = "https://YOUR_PROJECT_ID.supabase.co";
+const SUPABASE_ANON_KEY = "YOUR_ANON_PUBLIC_KEY";
 
 const supabaseClient = (window.supabase && SUPABASE_URL !== "https://YOUR_PROJECT_ID.supabase.co") 
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
@@ -40,7 +40,7 @@ let usedPlayers = new Set();
 let currentSpin = { teamCode: null, eraStr: null };
 let mustPick = false;
 let rerolls = { team: 1, era: 1 };
-let currentGameMode = 'classic';
+let currentGameMode = 'classic'; // 'classic' | 'hoop_iq' | '1v1'
 let currentUser = null;
 let currentLeaderboardMode = 'classic';
 
@@ -53,7 +53,7 @@ async function init() {
     console.error("Failed to load rosters.json:", err);
   }
 
-  // Check auth session
+  // Check Supabase session
   if (supabaseClient) {
     const { data: { session } } = await supabaseClient.auth.getSession();
     updateUserAuthUI(session?.user || null);
@@ -66,34 +66,72 @@ async function init() {
   renderSlots();
 }
 
-// --- VIEW NAVIGATION (DRAFT vs LEADERBOARD vs STATS) ---
+// --- HOME & VIEW NAVIGATION ---
+function selectModeFromHome(mode) {
+  currentGameMode = mode;
+  resetGame();
+
+  const modeLabels = {
+    classic: 'Classic Mode',
+    hoop_iq: '🧠 Hoop IQ Mode',
+    '1v1': '⚔️ 1v1 Head-to-Head'
+  };
+  
+  const labelEl = document.getElementById('activeModeText');
+  if (labelEl) labelEl.innerText = modeLabels[mode];
+
+  switchMainView('game');
+}
+
 function switchMainView(view) {
+  const hView = document.getElementById('homeView');
   const gView = document.getElementById('gameView');
   const lbView = document.getElementById('leaderboardView');
   const sView = document.getElementById('statsView');
-  const modeGroup = document.getElementById('modeSelectorGroup');
+  const modeIndicator = document.getElementById('activeModeBadge');
 
+  const navHome = document.getElementById('navHomeBtn');
   const navGame = document.getElementById('navGameBtn');
   const navLb = document.getElementById('navLeaderboardBtn');
   const navStats = document.getElementById('navStatsBtn');
 
-  // Reset nav highlights
-  [navGame, navLb, navStats].forEach(b => b.className = "px-3.5 py-1.5 rounded-lg transition text-slate-400 hover:text-white");
-  [gView, lbView, sView].forEach(v => v.classList.add('hidden'));
+  // Reset all tabs
+  [navHome, navGame, navLb, navStats].forEach(b => {
+    if (b) b.className = "px-3.5 py-1.5 rounded-lg transition text-slate-400 hover:text-white";
+  });
+  [hView, gView, lbView, sView].forEach(v => {
+    if (v) v.classList.add('hidden');
+  });
 
-  if (view === 'game') {
+  if (view === 'home') {
+    hView.classList.remove('hidden');
+    navHome.className = "px-3.5 py-1.5 rounded-lg transition bg-orange-500 text-white shadow-md";
+    if (modeIndicator) {
+      modeIndicator.classList.add('hidden');
+      modeIndicator.classList.remove('flex');
+    }
+  } else if (view === 'game') {
     gView.classList.remove('hidden');
     navGame.className = "px-3.5 py-1.5 rounded-lg transition bg-orange-500 text-white shadow-md";
-    modeGroup.classList.remove('hidden');
+    if (modeIndicator) {
+      modeIndicator.classList.remove('hidden');
+      modeIndicator.classList.add('flex');
+    }
   } else if (view === 'leaderboard') {
     lbView.classList.remove('hidden');
     navLb.className = "px-3.5 py-1.5 rounded-lg transition bg-orange-500 text-white shadow-md";
-    modeGroup.classList.add('hidden');
+    if (modeIndicator) {
+      modeIndicator.classList.add('hidden');
+      modeIndicator.classList.remove('flex');
+    }
     fetchLeaderboard();
   } else if (view === 'stats') {
     sView.classList.remove('hidden');
     navStats.className = "px-3.5 py-1.5 rounded-lg transition bg-orange-500 text-white shadow-md";
-    modeGroup.classList.add('hidden');
+    if (modeIndicator) {
+      modeIndicator.classList.add('hidden');
+      modeIndicator.classList.remove('flex');
+    }
     fetchUserStats();
   }
 }
@@ -130,15 +168,14 @@ async function handleEmailAuth(e) {
   const email = document.getElementById('authEmail').value;
   const password = document.getElementById('authPassword').value;
 
-  // Try signing in; if not found, register
-  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
   if (error) {
     const { error: signUpError } = await supabaseClient.auth.signUp({ email, password });
     if (signUpError) {
       alert(signUpError.message);
       return;
     }
-    alert("Account registered and logged in!");
+    alert("Account registered and signed in!");
   }
   closeAuthModal();
 }
@@ -161,24 +198,28 @@ function updateUserAuthUI(user) {
         <button onclick="handleSignOut()" class="text-[10px] text-slate-500 hover:text-rose-400 font-semibold uppercase underline">Sign Out</button>
       </div>
     `;
-    document.getElementById('statsUserGreeting').innerText = `Logged in as ${user.email}`;
+    const greet = document.getElementById('statsUserGreeting');
+    if (greet) greet.innerText = `Logged in as ${user.email}`;
   } else {
     container.innerHTML = `
       <button onclick="openAuthModal()" class="px-3.5 py-1.5 rounded-lg bg-orange-500/20 text-orange-400 border border-orange-500/40 hover:bg-orange-500 hover:text-white text-xs font-bold transition">
         Sign In
       </button>
     `;
-    document.getElementById('statsUserGreeting').innerText = "Sign in to save your runs across devices.";
+    const greet = document.getElementById('statsUserGreeting');
+    if (greet) greet.innerText = "Sign in to save your runs across devices.";
   }
 }
 
-// --- CLOUD SAVE TO SUPABASE ---
+// --- CLOUD SAVE ---
 async function saveCompletedBuildToSupabase(finalOvr, tier, variance, arch) {
   const statusEl = document.getElementById('saveStatus');
+  if (!statusEl) return;
+
   statusEl.innerText = "Syncing build to global leaderboard...";
 
   if (!supabaseClient) {
-    statusEl.innerText = "Build complete! (Add Supabase keys in app.js to enable global rankings)";
+    statusEl.innerText = "Build complete! (Add Supabase keys in app.js for leaderboard rankings)";
     return;
   }
 
@@ -204,13 +245,13 @@ async function saveCompletedBuildToSupabase(finalOvr, tier, variance, arch) {
   }
 }
 
-// --- LEADERBOARD FETCHING ---
+// --- LEADERBOARD LOGIC ---
 async function fetchLeaderboard() {
   const tbody = document.getElementById('leaderboardTableBody');
   tbody.innerHTML = `<tr><td colspan="5" class="py-12 text-center text-slate-500 italic">Fetching rankings...</td></tr>`;
 
   if (!supabaseClient) {
-    tbody.innerHTML = `<tr><td colspan="5" class="py-12 text-center text-slate-500 italic">Configure Supabase keys to display live rankings.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" class="py-12 text-center text-slate-500 italic">Configure Supabase keys in app.js to display live rankings.</td></tr>`;
     return;
   }
 
@@ -257,7 +298,7 @@ function filterLeaderboardMode(mode) {
   fetchLeaderboard();
 }
 
-// --- USER PROFILE & STATS FETCHING ---
+// --- USER STATS LOGIC ---
 async function fetchUserStats() {
   const tbody = document.getElementById('userBuildsTableBody');
   if (!supabaseClient || !currentUser) {
@@ -276,7 +317,6 @@ async function fetchUserStats() {
     return;
   }
 
-  // Update Summary Cards
   const total = data.length;
   const bestOvr = Math.max(...data.map(d => d.overall_score));
   const avgOvr = (data.reduce((acc, d) => acc + d.overall_score, 0) / total).toFixed(1);
@@ -287,7 +327,6 @@ async function fetchUserStats() {
   document.getElementById('statAvgOvr').innerText = avgOvr;
   document.getElementById('statBestTier').innerText = bestTier;
 
-  // Render Table
   tbody.innerHTML = '';
   data.forEach(row => {
     const d = new Date(row.created_at).toLocaleDateString();
@@ -319,36 +358,6 @@ document.getElementById('assignModal').addEventListener('click', (e) => {
 document.getElementById('authModal').addEventListener('click', (e) => {
   if (e.target.id === 'authModal') closeAuthModal();
 });
-
-// --- GAME MODE SWITCHER ---
-function switchGameMode(newMode) {
-  if (Object.keys(slotsState).length > 0) {
-    const confirmSwitch = confirm("Changing modes will reset your current draft run. Continue?");
-    if (!confirmSwitch) return;
-  }
-
-  currentGameMode = newMode;
-  const modes = ['classic', 'hoop_iq', '1v1'];
-  const btnMap = {
-    classic: document.getElementById('modeClassicBtn'),
-    hoop_iq: document.getElementById('modeHoopIqBtn'),
-    '1v1': document.getElementById('mode1v1Btn')
-  };
-
-  modes.forEach(m => {
-    if (btnMap[m]) {
-      btnMap[m].className = (m === newMode) 
-        ? "px-3 py-1 rounded-lg transition bg-orange-500 text-white shadow-md" 
-        : "px-3 py-1 rounded-lg transition text-slate-400 hover:text-white";
-    }
-  });
-
-  resetGame();
-
-  if (newMode === '1v1') {
-    alert("1v1 Mode: Draft your build, then download the build card to compare attributes head-to-head against a friend!");
-  }
-}
 
 // --- MAIN SPIN WHEEL ---
 function triggerMainSpin() {
@@ -829,7 +838,7 @@ function showFinishModal(ovr, tier, variance) {
   }
 }
 
-// --- CARD EXPORT ---
+// --- CARD EXPORT (NO COPY TEXT) ---
 function downloadBuildImage() {
   const cardElement = document.getElementById('exportableBuildCard');
   const ovr = document.getElementById('overallScore').innerText;
@@ -843,18 +852,9 @@ function downloadBuildImage() {
     link.download = `My99Overall_${arch.replace(/\s+/g, '_')}_${ovr}OVR.png`;
     link.href = canvas.toDataURL('image/png');
     link.click();
-  });
-}
-
-function shareBuildText() {
-  const ovr = document.getElementById('overallScore').innerText;
-  const tier = document.getElementById('tierBadge').innerText;
-  const arch = document.getElementById('archetypeTitle').innerText;
-  const modeLabel = currentGameMode === 'hoop_iq' ? 'Hoop IQ Mode' : (currentGameMode === '1v1' ? '1v1 Mode' : 'Classic Mode');
-
-  const text = `🏀 My99Overall Challenge (${modeLabel})\nBuild: ${ovr} OVR (${tier})\nArchetype: ${arch}\nCan you build a 99 Demigod?`;
-  navigator.clipboard.writeText(text).then(() => {
-    alert("Build summary copied to clipboard!");
+  }).catch(err => {
+    console.error("Screenshot export failed:", err);
+    alert("Could not generate image. Please try again!");
   });
 }
 
