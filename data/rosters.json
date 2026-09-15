@@ -288,6 +288,12 @@
       { "name": "Dwight Howard", "pos": "C", "ratings": { "three_pt": 25, "finishing": 89, "mid_range": 58, "playmaking": 60, "perimeter_def": 55, "interior_def": 95, "athleticism": 85, "iq_clutch": 85 } },
       { "name": "Patrick Beverley", "pos": "PG", "ratings": { "three_pt": 82, "finishing": 75, "mid_range": 74, "playmaking": 78, "perimeter_def": 95, "interior_def": 52, "athleticism": 86, "iq_clutch": 90 } }
     ],
+    "IND_90's": [
+      { "name": "Reggie Miller", "pos": "SG", "ratings": { "three_pt": 97, "finishing": 80, "mid_range": 91, "playmaking": 76, "perimeter_def": 80, "interior_def": 35, "athleticism": 82, "iq_clutch": 99 } },
+      { "name": "Rik Smits", "pos": "C", "ratings": { "three_pt": 25, "finishing": 84, "mid_range": 89, "playmaking": 64, "perimeter_def": 45, "interior_def": 88, "athleticism": 65, "iq_clutch": 86 } },
+      { "name": "Mark Jackson", "pos": "PG", "ratings": { "three_pt": 75, "finishing": 72, "mid_range": 80, "playmaking": 94, "perimeter_def": 78, "interior_def": 40, "athleticism": 70, "iq_clutch": 88 } },
+      { "name": "Dale Davis", "pos": "PF", "ratings": { "three_pt": 25, "finishing": 80, "mid_range": 60, "playmaking": 55, "perimeter_def": 65, "interior_def": 92, "athleticism": 82, "iq_clutch": 85 } }
+    ],
     "LAC_10's": [
       { "name": "Chris Paul", "pos": "PG", "ratings": { "three_pt": 89, "finishing": 84, "mid_range": 95, "playmaking": 99, "perimeter_def": 96, "interior_def": 45, "athleticism": 85, "iq_clutch": 97 } },
       { "name": "Blake Griffin", "pos": "PF", "ratings": { "three_pt": 76, "finishing": 98, "mid_range": 86, "playmaking": 85, "perimeter_def": 74, "interior_def": 88, "athleticism": 97, "iq_clutch": 89 } },

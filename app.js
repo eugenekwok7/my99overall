@@ -899,5 +899,17 @@ function resetGame() {
   renderSlots();
 }
 
+window.addEventListener('keydown', (e) => {
+  if (['input', 'textarea'].includes(document.activeElement.tagName.toLowerCase())) return;
+  if (e.code === 'Space') {
+    e.preventDefault();
+    triggerMainSpin();
+  } else if (e.key === '1') {
+    useReroll('team');
+  } else if (e.key === '2') {
+    useReroll('era');
+  }
+});
+
 // Start app
 init();
